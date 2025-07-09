@@ -1,0 +1,193 @@
+---
+title: "Global Income Mobility Analysis (2003-2023)"
+author: "Mashhood Raza Khan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Seting global options for R chunks
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = 'center', fig.width = 8, fig.height = 6)
+
+# Installing and loading necessary packages
+packages <- c("WDI", "dplyr", "ggplot2", "tibble", "tidyr", "knitr", "kableExtra")
+new_packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+
+suppressPackageStartupMessages(library(WDI))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(knitr))
+suppressPackageStartupMessages(library(kableExtra))
+```
+
+# Introduction
+This report analyzes global income mobility, specifically focusing on the transition of countries between different GDP per capita (PPP) quartile groups from 2003 to 2023. The analysis uses data from the World Bank Development Indicators (WDI) and focuses on the top 100 countries by GDP PPP in 2023.
+
+# Data Fetching and Preparation
+
+## Fetching GDP Data
+GDP per capita (PPP, current international $) data is fetched for all available countries for the years 2003 and 2023 from the World Bank.
+
+```{r data-fetching}
+gdp_data <- WDI(
+  country = "all",
+  indicator = "NY.GDP.PCAP.PP.CD",
+  start = 2003,
+  end = 2023,
+  extra = FALSE,
+  cache = NULL
+)
+```
+
+## Cleaning and Initial Filtering
+The fetched data is cleaned by renaming columns and removing entries with missing GDP values.
+
+```{r data-cleaning}
+gdp_data <- gdp_data %>%
+  rename(
+    CountryName = country,
+    Year = year,
+    Value = NY.GDP.PCAP.PP.CD
+  ) %>%
+  filter(!is.na(Value))
+```
+
+## Selecting Top 100 Countries
+The analysis focuses on the top 100 countries based on their GDP per capita in 2023 to ensure a consistent and relevant set of nations.
+
+```{r select-top-100-countries}
+top_100 <- gdp_data %>%
+  filter(Year == 2023) %>%
+  arrange(desc(Value)) %>%
+  slice_head(n = 100) %>%
+  pull(CountryName)
+
+# Selecting countries only if they have data for both 2003 and 2023 for the selected top 100.
+data_top100 <- gdp_data %>%
+  filter(CountryName %in% top_100, Year %in% c(2003, 2023))
+```
+
+### Raw GDP Data for Selected Countries (2003 & 2023)
+Below is a sample of the raw GDP data for the selected top 100 countries across the two years.
+
+```{r display-raw-gdp-data, results='asis'}
+gdp_wide <- data_top100 %>%
+  pivot_wider(names_from = Year, values_from = Value, names_prefix = "GDP_") %>%
+  arrange(CountryName) # Sorting by country name
+
+# Displaying the data
+gdp_wide_sample <- gdp_wide
+
+# Rendering the table using kable. 
+kable(gdp_wide_sample, caption = "Sample of GDP per Capita (PPP) for Selected Countries (2003 & 2023)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+
+## Assigning Income Quartile Groups
+Countries are assigned to one of four income groups (quartiles) based on their GDP per capita for each year independently.
+
+```{r assign-income-groups}
+data_top100 <- data_top100 %>%
+  group_by(Year) %>%
+  mutate(
+    IncomeGroup = ntile(Value, 4),
+    IncomeGroup = case_when(
+      IncomeGroup == 1 ~ "¼",
+      IncomeGroup == 2 ~ "½",
+      IncomeGroup == 3 ~ "1",
+      IncomeGroup == 4 ~ "2"
+    )
+  ) %>%
+  ungroup()
+```
+
+## Preparing Mobility Data
+The income groups for 2003 and 2023 are combined to create a dataset showing the transition of each country.
+
+```{r prepare-mobility-data}
+group_2003 <- data_top100 %>%
+  filter(Year == 2003) %>%
+  select(CountryName, Group2003 = IncomeGroup)
+
+group_2023 <- data_top100 %>%
+  filter(Year == 2023) %>%
+  select(CountryName, Group2023 = IncomeGroup)
+
+mobility_data <- inner_join(group_2003, group_2023, by = "CountryName")
+```
+
+### Country Income Group Transitions
+This table shows which income quartile each country belonged to in 2003 and 2023.
+
+```{r display-mobility-groups, results='asis'}
+# Displaying the mobility data
+mobility_data_sample <- mobility_data
+
+kable(mobility_data_sample, caption = "Sample of Country Income Group Transitions (2003 to 2023)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+# Mobility Matrix Analysis
+
+## Calculating the Mobility Matrix
+A contingency table is created to summarize the transitions between income groups.
+
+```{r calculate-mobility-matrix}
+mobility_matrix <- table(mobility_data$Group2003, mobility_data$Group2023)
+
+print("Mobility Matrix (Counts):")
+print(mobility_matrix)
+```
+
+## Visualizing the Mobility Matrix (Heatmap)
+A heatmap provides a clear visual representation of how countries moved between income quartiles. The color intensity represents the number of countries, with darker colors indicating more transitions.
+
+```{r visualize-heatmap, fig.cap="Heatmap of Country Income Mobility (2003 to 2023)"}
+# Converting the mobility matrix to a data frame for ggplot2.
+mobility_matrix_df_plot <- as.data.frame.matrix(mobility_matrix) %>%
+  tibble::rownames_to_column("Group2003") %>%
+  tidyr::pivot_longer(
+    cols = c("¼", "½", "1", "2"), # Explicitly selecting the quartile columns
+    names_to = "Group2023",
+    values_to = "Count"
+  )
+
+# Defining order of quartile labels
+quartile_order <- c("¼", "½", "1", "2")
+
+# Converting Group2003 and Group2023 to factors with the desired order
+mobility_matrix_df_plot$Group2003 <- factor(mobility_matrix_df_plot$Group2003, levels = quartile_order)
+mobility_matrix_df_plot$Group2023 <- factor(mobility_matrix_df_plot$Group2023, levels = quartile_order)
+
+# Creating the heatmap using ggplot2
+ggplot(mobility_matrix_df_plot, aes(x = Group2023, y = Group2003, fill = Count)) +
+  geom_tile(color = "white", linewidth = 1.5) +
+  geom_text(aes(label = Count), color = "black", size = 5) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue", name = "Number of Countries") +
+
+  scale_x_discrete(limits = quartile_order) + 
+  scale_y_discrete(limits = rev(quartile_order)) + 
+  labs(
+    title = "Country Income Mobility Matrix (2003 to 2023)",
+    x = "Income Group in 2023",
+    y = "Income Group in 2003"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+# Conclusion
+This report provides an overview of how countries' income groups (based on GDP per capita PPP) have shifted between 2003 and 2023. The heatmap visually summarizes the mobility, showing where countries originated in 2003 and where they ended up in 2023.
