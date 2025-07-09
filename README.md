@@ -1,6 +1,6 @@
 # 🌍 Global Income Mobility Analysis (2003–2023)
 
-This project analyzes global income mobility across 100 countries between 2003 and 2023. It uses GDP per capita (PPP) data to group countries into fixed income categories (Low, Middle, High) and examines how countries transition between these groups over 20 years.
+This project analyzes global income mobility across 96 countries between 2003 and 2023. It uses GDP per capita (PPP) data to group countries into fixed income categories (Low, Middle, High) and examines how countries transition between these groups over 20 years.
 
 The results are presented as a **mobility matrix** and visualized using R.
 
